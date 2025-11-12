@@ -61,10 +61,17 @@ textarea {
         var notes = "";
         if (method == "zelle") {
             ref = tx.match(/REF # ?([a-zA-Z0-9]+)/)[1];
-            counterparty = capitalize(tx.substring("zelle  ".length + tx.match(/FROM|TO/)[0].length, tx.match(/ ON \d\d\/\d\d REF #/).index));
             var match = tx.match(/ ON \d\d\/\d\d REF # ?([a-zA-Z0-9]+)/);
+            // When the custom note is long, they may sacrifice the ON text.
+            if (match == null) {
+                match = tx.match(/ REF # ?([a-zA-Z0-9]+)/);
+            } else {
+                rcvDate = tx.match(/ ON (\d\d\/\d\d) REF #/)[1] + '/' + new Date().getFullYear();
+            }
+            counterparty = capitalize(tx.substring("zelle  ".length + tx.match(/FROM|TO/)[0].length, match.index));
+            
             notes = tx.substring(match.index + match[0].length + 1).toLowerCase();
-            rcvDate = tx.match(/ ON (\d\d\/\d\d) REF #/)[1] + '/' + new Date().getFullYear();
+            
         } else if (method == "check") {
             ref = tx.substring("check # ".length);
         } else if ( method == "tithe.ly") {
