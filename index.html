@@ -1,0 +1,85 @@
+<html>
+<style>
+textarea {
+    width: 800px;
+    height: 400px;
+    overflow-y: scroll;
+    overflow: scroll;
+    white-space: pre;
+}
+.button {
+  background-color: #008cba; /* Green */
+  border: none;
+  color: white;
+  padding: 15px 32px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  border-radius: 4px;
+  user-select: none;
+}
+</style>
+<div>Enter Comma-delimited file content (goto the wells fargo account, then click "Download Account Activity", pick dates, and use Comma delimited):</div>
+<textarea id="input"></textarea>
+<br/>
+<div id="submit" class="button">Transform</div>
+<br/>
+<div>Transformed content (copy this into CCF Transactions google sheet and then do "Data" -> "Split Text Into Columns"):</div>
+<textarea id="output" readonly>
+
+</textarea>
+<script>
+    const capitalize = (str, lower = true) =>
+  (lower ? str.toLowerCase() : str).replace(/(?:^|\s|["'([{])+\S/g, match => match.toUpperCase());
+;
+
+    function transformRow(cols) {
+        const postDate = cols[0];
+        const credit = cols[1].startsWith('-') ? "" : '$' + cols[1];
+        const debit = cols[1].startsWith('-') ? '$' + cols[1].substring(1) : "";
+        const tx = cols[4];
+        var method = tx.split(" ")[0].toLowerCase();
+        var ref = "";
+        var counterparty = "";
+        var rcvDate = "";
+        var notes = "";
+        if (method == "zelle") {
+            ref = tx.match(/REF # ?([a-zA-Z0-9]+)/)[1];
+            counterparty = capitalize(tx.substring("zelle  ".length + tx.match(/FROM|TO/)[0].length, tx.match(/ ON \d\d\/\d\d REF #/).index));
+            var match = tx.match(/ ON \d\d\/\d\d REF # ?([a-zA-Z0-9]+)/);
+            notes = tx.substring(match.index + match[0].length + 1).toLowerCase();
+            rcvDate = tx.match(/ ON (\d\d\/\d\d) REF #/)[1] + '/' + new Date().getFullYear();
+        } else if (method == "check") {
+            ref = tx.substring("check # ".length);
+        } else if ( method == "tithe.ly") {
+            method = "tithely";
+            ref = tx.substring("tithe.ly tithe.ly* ".length).split(" ")[0];
+            counterparty = "PFP";
+        }
+        return [postDate, rcvDate, method, ref, counterparty, credit, debit, notes];
+    }
+    function transform(csv) {
+        var lines = csv.split('\r\n');
+        if (lines.length == 1) {
+            lines = csv.split('\n');
+        }
+        const values = lines
+            .filter(s => s.length > 1)
+            .map(row => row.substring(1, row.length - 1).split('","'))
+            .map(transformRow)
+            .sort((a, b) => new Date(a[0]) - new Date(b[0]));
+        return values
+            .map(row => row.map(s => '"' + s + '"').join(','))
+            .join("\n");
+    }
+
+    window.onload = () => {
+        document.getElementById("submit").addEventListener("click", () => {
+            const input = document.getElementById("input").value;
+            document.getElementById("output").value = transform(input);
+        });
+    };
+</script>
+
+</html>
