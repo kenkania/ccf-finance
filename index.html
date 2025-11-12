@@ -18,6 +18,22 @@ textarea {
   font-size: 16px;
   border-radius: 4px;
   user-select: none;
+  cursor: pointer;
+}
+.error-box {
+  display: none;
+  background-color: #ffebee;
+  border: 2px solid #ef5350;
+  border-radius: 4px;
+  padding: 15px;
+  margin: 10px 0;
+  color: #c62828;
+  font-family: monospace;
+  white-space: pre-wrap;
+  max-width: 800px;
+}
+.error-box.visible {
+  display: block;
 }
 </style>
 <div>Enter Comma-delimited file content (goto the wells fargo account, then click "Download Account Activity", pick dates, and use Comma delimited):</div>
@@ -25,15 +41,14 @@ textarea {
 <br/>
 <div id="submit" class="button">Transform</div>
 <br/>
+<div id="error" class="error-box"></div>
 <div>Transformed content (copy this into CCF Transactions google sheet and then do "Data" -> "Split Text Into Columns"):</div>
 <textarea id="output" readonly>
-
 </textarea>
 <script>
     const capitalize = (str, lower = true) =>
   (lower ? str.toLowerCase() : str).replace(/(?:^|\s|["'([{])+\S/g, match => match.toUpperCase());
 ;
-
     function transformRow(cols) {
         const postDate = cols[0];
         const credit = cols[1].startsWith('-') ? "" : '$' + cols[1];
@@ -73,13 +88,60 @@ textarea {
             .map(row => row.map(s => '"' + s + '"').join(','))
             .join("\n");
     }
+    
+    function showError(message, lineNumber, lineText, error) {
+        console.error("Transform error:", error);
+        const errorBox = document.getElementById("error");
+        errorBox.textContent = `Error on line ${lineNumber}:
+${message}
 
+Line content:
+${lineText}`;
+        errorBox.classList.add("visible");
+    }
+    
+    function hideError() {
+        const errorBox = document.getElementById("error");
+        errorBox.classList.remove("visible");
+    }
+    
     window.onload = () => {
         document.getElementById("submit").addEventListener("click", () => {
+            hideError();
             const input = document.getElementById("input").value;
-            document.getElementById("output").value = transform(input);
+            
+            try {
+                var lines = input.split('\r\n');
+                if (lines.length == 1) {
+                    lines = input.split('\n');
+                }
+                
+                const filteredLines = lines.filter(s => s.length > 1);
+                const parsedRows = [];
+                
+                for (let i = 0; i < filteredLines.length; i++) {
+                    try {
+                        const line = filteredLines[i];
+                        const cols = line.substring(1, line.length - 1).split('","');
+                        const transformed = transformRow(cols);
+                        parsedRows.push(transformed);
+                    } catch (err) {
+                        showError(err.message, i + 1, filteredLines[i], err);
+                        return;
+                    }
+                }
+                
+                const sorted = parsedRows.sort((a, b) => new Date(a[0]) - new Date(b[0]));
+                const result = sorted
+                    .map(row => row.map(s => '"' + s + '"').join(','))
+                    .join("\n");
+                
+                document.getElementById("output").value = result;
+            } catch (err) {
+                console.error("Transform error:", err);
+                showError(err.message, "unknown", "", err);
+            }
         });
     };
 </script>
-
 </html>
