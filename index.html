@@ -49,37 +49,56 @@ textarea {
     const capitalize = (str, lower = true) =>
   (lower ? str.toLowerCase() : str).replace(/(?:^|\s|["'([{])+\S/g, match => match.toUpperCase());
 ;
+
+    function parseZelle(tx) {
+        var ref = tx.match(/REF # ?([a-zA-Z0-9]+)/)[1];
+        var match = tx.match(/ ON \d\d\/\d\d REF # ?([a-zA-Z0-9]+)/);
+        var rcvDate = "";
+        // When the custom note is long, they may sacrifice the ON text.
+        if (match == null) {
+            match = tx.match(/ REF # ?([a-zA-Z0-9]+)/);
+        } else {
+            rcvDate = tx.match(/ ON (\d\d\/\d\d) REF #/)[1] + '/' + new Date().getFullYear();
+        }
+        var counterparty = capitalize(tx.substring("zelle  ".length + tx.match(/FROM|TO/)[0].length, match.index));
+        
+        var notes = tx.substring(match.index + match[0].length + 1).toLowerCase();
+
+        return {
+            method: "zelle",
+            ref,
+            rcvDate,
+            notes,
+            counterparty,
+        };
+    }
+
+    function parseDescription(tx) {
+        var lower = tx.toLowerCase();
+        if (lower.startsWith("deposited or cashed check ") || lower.startsWith("check ")) {
+            return {
+                method: "check",
+                ref: lower.split("check # ")[1],
+            };
+        } else if (lower.startsWith("zelle ")) {
+            return parseZelle(tx);
+        } else if (lower.startsWith("tithe.ly ")) {
+            return {
+                method: "tithely",
+                ref: tx.substring("tithe.ly tithe.ly* ".length).split(" ")[0],
+                counterparty: "PFP",
+            };
+        } else {
+            throw new Error("unknown transaction type");
+        }
+    }
+    
     function transformRow(cols) {
         const postDate = cols[0];
         const credit = cols[1].startsWith('-') ? "" : '$' + cols[1];
         const debit = cols[1].startsWith('-') ? '$' + cols[1].substring(1) : "";
-        const tx = cols[4];
-        var method = tx.split(" ")[0].toLowerCase();
-        var ref = "";
-        var counterparty = "";
-        var rcvDate = "";
-        var notes = "";
-        if (method == "zelle") {
-            ref = tx.match(/REF # ?([a-zA-Z0-9]+)/)[1];
-            var match = tx.match(/ ON \d\d\/\d\d REF # ?([a-zA-Z0-9]+)/);
-            // When the custom note is long, they may sacrifice the ON text.
-            if (match == null) {
-                match = tx.match(/ REF # ?([a-zA-Z0-9]+)/);
-            } else {
-                rcvDate = tx.match(/ ON (\d\d\/\d\d) REF #/)[1] + '/' + new Date().getFullYear();
-            }
-            counterparty = capitalize(tx.substring("zelle  ".length + tx.match(/FROM|TO/)[0].length, match.index));
-            
-            notes = tx.substring(match.index + match[0].length + 1).toLowerCase();
-            
-        } else if (method == "check") {
-            ref = tx.substring("check # ".length);
-        } else if ( method == "tithe.ly") {
-            method = "tithely";
-            ref = tx.substring("tithe.ly tithe.ly* ".length).split(" ")[0];
-            counterparty = "PFP";
-        }
-        return [postDate, rcvDate, method, ref, counterparty, credit, debit, notes];
+        const custom = parseDescription(cols[4]);
+        return [postDate, custom.rcvDate || "", custom.method, custom.ref, custom.counterparty || "TODO", credit, debit, custom.notes || ""];
     }
     function transform(csv) {
         var lines = csv.split('\r\n');
