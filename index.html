@@ -50,24 +50,24 @@ const capitalize = (str, lower = true) =>
     (lower ? str.toLowerCase() : str).replace(/(?:^|\s|["'([{])+\S/g, match => match.toUpperCase());
 
 function parseZelle(tx) {
-    // 1. Extract Ref: Look for any REF # followed by alphanumeric
+    // 1. Get Ref # (finds "REF #" then captures the alphanumeric string)
     const refMatch = tx.match(/REF # ?([a-zA-Z0-9]+)/i);
     const ref = refMatch ? refMatch[1] : "";
 
-    // 2. Extract Date: Look for ON MM/DD
+    // 2. Get Date (finds "ON MM/DD")
     const onMatch = tx.match(/ ON (\d\d\/\d\d)/i);
     const rcvDate = onMatch ? onMatch[1] + '/' + new Date().getFullYear() : "";
 
-    // 3. Extract Counterparty: 
-    // Format is "ZELLE FROM/TO [NAME] ON..." 
-    // We strip "ZELLE " and the direction, then take everything up until the "ON" or "REF"
-    const dirMatch = tx.match(/ZELLE (FROM|TO) /i);
-    const startIdx = dirMatch ? dirMatch.index + dirMatch[0].length : 6;
-    const endIdx = onMatch ? onMatch.index : (refMatch ? refMatch.index : tx.length);
+    // 3. Get Counterparty & Notes
+    // We split at "ON" if it exists, otherwise split at "REF #"
+    const splitPoint = onMatch ? onMatch.index : (refMatch ? refMatch.index : tx.length);
+    const header = tx.substring(0, splitPoint);
     
-    const counterparty = capitalize(tx.substring(startIdx, endIdx).trim());
+    // Counterparty is usually the text between the direction ("FROM"/"TO") and the split point
+    const dirMatch = header.match(/(FROM|TO) (.*)/i);
+    const counterparty = dirMatch ? capitalize(dirMatch[2].trim()) : "UNKNOWN";
 
-    // 4. Notes: Everything after the REF section
+    // Notes are everything after the "REF # XXXXXX"
     let notes = "";
     if (refMatch) {
         notes = tx.substring(refMatch.index + refMatch[0].length).trim();
@@ -77,9 +77,9 @@ function parseZelle(tx) {
 }
 
 function parseDescription(tx) {
-    var lower = tx.toLowerCase();
-    if (lower.startsWith("deposited or cashed check ") || lower.startsWith("check ")) {
-        return { method: "check", ref: lower.split("check # ")[1] || "" };
+    const lower = tx.toLowerCase();
+    if (lower.startsWith("check ") || lower.startsWith("deposited or cashed check ")) {
+        return { method: "check", ref: lower.split("check # ")[1] || "", counterparty: "TODO", notes: "" };
     } else if (lower.startsWith("zelle ")) {
         return parseZelle(tx);
     } else if (lower.includes("tithe.ly")) {
@@ -96,29 +96,17 @@ function parseDescription(tx) {
 }
 
 function transformRow(cols) {
-    // CSV Format: 0: Date, 1: Description, 2: Amount, 3: Check #, 4: Status
     const postDate = cols[0];
     const rawAmount = cols[2];
-    
     const isDebit = rawAmount.startsWith('-');
     const credit = isDebit ? "" : '$' + rawAmount;
     const debit = isDebit ? '$' + rawAmount.substring(1) : "";
     
     const custom = parseDescription(cols[1]);
 
-    return [
-        postDate, 
-        custom.rcvDate || "", 
-        custom.method, 
-        custom.ref, 
-        custom.counterparty || "TODO", 
-        credit, 
-        debit, 
-        custom.notes || ""
-    ];
+    return [postDate, custom.rcvDate || "", custom.method, custom.ref, custom.counterparty || "TODO", credit, debit, custom.notes || ""];
 }
 
-// Window logic remains same for processing
 window.onload = () => {
     document.getElementById("submit").addEventListener("click", () => {
         const input = document.getElementById("input").value;
@@ -128,9 +116,10 @@ window.onload = () => {
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
             if (line.length < 5 || line.includes('"DATE"')) continue;
-            
-            const cols = line.substring(1, line.length - 1).split('","');
-            parsedRows.push(transformRow(cols));
+            try {
+                const cols = line.substring(1, line.length - 1).split('","');
+                parsedRows.push(transformRow(cols));
+            } catch (err) { console.error(err); }
         }
         
         const result = parsedRows
