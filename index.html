@@ -77,7 +77,6 @@ function parseZelle(tx) {
         counterparty,
     };
 }
-
 function parseDescription(tx) {
     var lower = tx.toLowerCase();
     if (lower.startsWith("deposited or cashed check ") || lower.startsWith("check ")) {
@@ -88,11 +87,15 @@ function parseDescription(tx) {
     } else if (lower.startsWith("zelle ")) {
         return parseZelle(tx);
     } else if (lower.includes("tithe.ly")) {
-        // Updated regex to handle irregular spaces/tabs between tithe.ly and the ID
-        const match = tx.match(/tithe\.ly\s+.*?\*\s*([a-zA-Z0-9-]+)/i);
+        // 1. Remove the "tithe.ly" prefix
+        // 2. Find the part after the asterisk
+        // 3. Take the first block of non-space characters
+        const parts = tx.split('*');
+        const ref = parts.length > 1 ? parts[1].trim().split(' ')[0] : "UNKNOWN";
+        
         return {
             method: "tithely",
-            ref: match ? match[1] : "UNKNOWN",
+            ref: ref,
             counterparty: "PFP",
             notes: ""
         };
@@ -100,7 +103,6 @@ function parseDescription(tx) {
         throw new Error("unknown transaction type: " + tx);
     }
 }
-
 function transformRow(cols) {
     // New format: 0: Date, 1: Description, 2: Amount, 3: Check #, 4: Status
     const postDate = cols[0];
