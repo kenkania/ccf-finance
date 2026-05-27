@@ -46,128 +46,110 @@ textarea {
 <textarea id="output" readonly>
 </textarea>
 <script>
-    const capitalize = (str, lower = true) =>
-  (lower ? str.toLowerCase() : str).replace(/(?:^|\s|["'([{])+\S/g, match => match.toUpperCase());
-;
+const capitalize = (str, lower = true) =>
+    (lower ? str.toLowerCase() : str).replace(/(?:^|\s|["'([{])+\S/g, match => match.toUpperCase());
 
-    function parseZelle(tx) {
-        var ref = tx.match(/REF # ?([a-zA-Z0-9]+)/)[1];
-        var match = tx.match(/ ON \d\d\/\d\d REF # ?([a-zA-Z0-9]+)/);
-        var rcvDate = "";
-        // When the custom note is long, they may sacrifice the ON text.
-        if (match == null) {
-            match = tx.match(/ REF # ?([a-zA-Z0-9]+)/);
-        } else {
-            rcvDate = tx.match(/ ON (\d\d\/\d\d) REF #/)[1] + '/' + new Date().getFullYear();
-        }
-        var counterparty = capitalize(tx.substring("zelle  ".length + tx.match(/FROM|TO/)[0].length, match.index));
-        
-        var notes = tx.substring(match.index + match[0].length + 1).toLowerCase();
+function parseZelle(tx) {
+    var ref = tx.match(/REF # ?([a-zA-Z0-9]+)/)[1];
+    var match = tx.match(/ ON \d\d\/\d\d REF # ?([a-zA-Z0-9]+)/);
+    var rcvDate = "";
+    // When the custom note is long, they may sacrifice the ON text.
+    if (match == null) {
+        match = tx.match(/ REF # ?([a-zA-Z0-9]+)/);
+    } else {
+        rcvDate = tx.match(/ ON (\d\d\/\d\d) REF #/)[1] + '/' + new Date().getFullYear();
+    }
+    // Updated substring logic based on standard Zelle string structure
+    var counterparty = capitalize(tx.substring("zelle ".length + tx.match(/FROM|TO/)[0].length, match.index).trim());
+    
+    var notes = tx.substring(match.index + match[0].length + 1).toLowerCase();
 
-        return {
-            method: "zelle",
-            ref,
-            rcvDate,
-            notes,
-            counterparty,
-        };
-    }
-
-    function parseDescription(tx) {
-        var lower = tx.toLowerCase();
-        if (lower.startsWith("deposited or cashed check ") || lower.startsWith("check ")) {
-            return {
-                method: "check",
-                ref: lower.split("check # ")[1],
-            };
-        } else if (lower.startsWith("zelle ")) {
-            return parseZelle(tx);
-        } else if (lower.startsWith("tithe.ly ")) {
-            return {
-                method: "tithely",
-                ref: tx.substring("tithe.ly tithe.ly* ".length).split(" ")[0],
-                counterparty: "PFP",
-            };
-        } else {
-            throw new Error("unknown transaction type");
-        }
-    }
-    
-    function transformRow(cols) {
-        const postDate = cols[0];
-        const credit = cols[1].startsWith('-') ? "" : '$' + cols[1];
-        const debit = cols[1].startsWith('-') ? '$' + cols[1].substring(1) : "";
-        const custom = parseDescription(cols[4]);
-        return [postDate, custom.rcvDate || "", custom.method, custom.ref, custom.counterparty || "TODO", credit, debit, custom.notes || ""];
-    }
-    function transform(csv) {
-        var lines = csv.split('\r\n');
-        if (lines.length == 1) {
-            lines = csv.split('\n');
-        }
-        const values = lines
-            .filter(s => s.length > 1)
-            .map(row => row.substring(1, row.length - 1).split('","'))
-            .map(transformRow)
-            .sort((a, b) => new Date(a[0]) - new Date(b[0]));
-        return values
-            .map(row => row.map(s => '"' + s + '"').join(','))
-            .join("\n");
-    }
-    
-    function showError(message, lineNumber, lineText, error) {
-        console.error("Transform error:", error);
-        const errorBox = document.getElementById("error");
-        errorBox.textContent = `Error on line ${lineNumber}:
-${message}
-
-Line content:
-${lineText}`;
-        errorBox.classList.add("visible");
-    }
-    
-    function hideError() {
-        const errorBox = document.getElementById("error");
-        errorBox.classList.remove("visible");
-    }
-    
-    window.onload = () => {
-        document.getElementById("submit").addEventListener("click", () => {
-            hideError();
-            const input = document.getElementById("input").value;
-            
-            try {
-                var lines = input.split('\r\n');
-                if (lines.length == 1) {
-                    lines = input.split('\n');
-                }
-                
-                const filteredLines = lines.filter(s => s.length > 1);
-                const parsedRows = [];
-                
-                for (let i = 0; i < filteredLines.length; i++) {
-                    try {
-                        const line = filteredLines[i];
-                        const cols = line.substring(1, line.length - 1).split('","');
-                        const transformed = transformRow(cols);
-                        parsedRows.push(transformed);
-                    } catch (err) {
-                        showError(err.message, i + 1, filteredLines[i], err);
-                        return;
-                    }
-                }
-                
-                const sorted = parsedRows.sort((a, b) => new Date(a[0]) - new Date(b[0]));
-                const result = sorted
-                    .map(row => row.map(s => '"' + s + '"').join(','))
-                    .join("\n");
-                
-                document.getElementById("output").value = result;
-            } catch (err) {
-                console.error("Transform error:", err);
-                showError(err.message, "unknown", "", err);
-            }
-        });
+    return {
+        method: "zelle",
+        ref,
+        rcvDate,
+        notes,
+        counterparty,
     };
+}
+
+function parseDescription(tx) {
+    var lower = tx.toLowerCase();
+    if (lower.startsWith("deposited or cashed check ") || lower.startsWith("check ")) {
+        return {
+            method: "check",
+            ref: lower.split("check # ")[1],
+        };
+    } else if (lower.startsWith("zelle ")) {
+        return parseZelle(tx);
+    } else if (lower.startsWith("tithe.ly ")) {
+        return {
+            method: "tithely",
+            ref: tx.substring("tithe.ly tithe.ly* ".length).split(" ")[0],
+            counterparty: "PFP",
+        };
+    } else {
+        throw new Error("unknown transaction type: " + tx);
+    }
+}
+
+function transformRow(cols) {
+    // New format index mapping: 0: Date, 1: Desc, 2: Amt, 3: Check#, 4: Status
+    const postDate = cols[0];
+    const rawAmount = cols[2];
+    const credit = rawAmount.startsWith('-') ? "" : '$' + rawAmount;
+    const debit = rawAmount.startsWith('-') ? '$' + rawAmount.substring(1) : "";
+    const custom = parseDescription(cols[1]);
+
+    return [postDate, custom.rcvDate || "", custom.method, custom.ref, custom.counterparty || "TODO", credit, debit, custom.notes || ""];
+}
+
+function showError(message, lineNumber, lineText, error) {
+    console.error("Transform error:", error);
+    const errorBox = document.getElementById("error");
+    errorBox.textContent = `Error on line ${lineNumber}: ${message}\n\nLine content: ${lineText}`;
+    errorBox.classList.add("visible");
+}
+
+function hideError() {
+    const errorBox = document.getElementById("error");
+    errorBox.classList.remove("visible");
+}
+
+window.onload = () => {
+    document.getElementById("submit").addEventListener("click", () => {
+        hideError();
+        const input = document.getElementById("input").value;
+        
+        try {
+            var lines = input.split(/\r?\n/);
+            const parsedRows = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                // Skip empty lines or the header row
+                if (line.length < 5 || line.startsWith('"DATE"')) continue;
+                
+                try {
+                    const cols = line.substring(1, line.length - 1).split('","');
+                    const transformed = transformRow(cols);
+                    parsedRows.push(transformed);
+                } catch (err) {
+                    showError(err.message, i + 1, line, err);
+                    return;
+                }
+            }
+            
+            const sorted = parsedRows.sort((a, b) => new Date(a[0]) - new Date(b[0]));
+            const result = sorted
+                .map(row => row.map(s => '"' + s + '"').join(','))
+                .join("\n");
+            
+            document.getElementById("output").value = result;
+        } catch (err) {
+            showError(err.message, "unknown", "", err);
+        }
+    });
+};
 </script>
 </html>
